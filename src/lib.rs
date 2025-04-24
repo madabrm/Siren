@@ -24,7 +24,7 @@ async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
     let host = req.url()?.host().map(|x| x.to_string()).unwrap_or_default();
     let main_page_url = env.var("MAIN_PAGE_URL").map(|x|x.to_string()).unwrap();
     let sub_page_url = env.var("SUB_PAGE_URL").map(|x|x.to_string()).unwrap();
-    let config = Config { uuid, host: host.clone(), proxy_addr: host, proxy_port: 443, main_page_url, sub_page_url};
+    let config = Config { uuid, host: host.clone(), proxy_addr: host, proxy_port: 443, main_page_url, sub_page_url };
 
     Router::with_data(config)
         .on_async("/", fe)
@@ -82,24 +82,22 @@ async fn tunnel(req: Request, mut cx: RouteContext<Config>) -> Result<Response> 
         proxyip = proxy_kv[&proxyip][proxyip_index].clone().replace(":", "-");
     }
 
-    if PROXYIP_PATTERN.is_match(&proxyip) {
+    let upgrade = req.headers().get("Upgrade")?.unwrap_or_default();
+    if upgrade == "websocket".to_string() && PROXYIP_PATTERN.is_match(&proxyip) {
         if let Some((addr, port_str)) = proxyip.split_once('-') {
             if let Ok(port) = port_str.parse() {
                 cx.data.proxy_addr = addr.to_string();
                 cx.data.proxy_port = port;
             }
         }
-    }
-    
-    let upgrade = req.headers().get("Upgrade")?.unwrap_or("".to_string());
-    if upgrade == "websocket".to_string() {
+        
         let WebSocketPair { server, client } = WebSocketPair::new()?;
         server.accept()?;
     
         wasm_bindgen_futures::spawn_local(async move {
             let events = server.events().unwrap();
             if let Err(e) = ProxyStream::new(cx.data, &server, events).process().await {
-                console_log!("[tunnel]: {}", e);
+                console_error!("[tunnel]: {}", e);
             }
         });
     
